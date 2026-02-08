@@ -14,16 +14,17 @@ import java.util.List;
 public class TicketController {
 
     private final TicketRepository ticketRepository;
+    private final TicketService ticketService;
 
-    public TicketController(TicketRepository ticketRepository) {
+    public TicketController(TicketRepository ticketRepository, TicketService ticketService) {
         this.ticketRepository = ticketRepository;
+        this.ticketService = ticketService;
     }
 
     @PostMapping
     public ResponseEntity<Ticket> createTicket(@Valid @RequestBody CreateTicketRequest request) {
         Ticket ticket = new Ticket();
 
-        // Set these here so clients don't control workflow state.
         ticket.setOriginalText(request.getOriginalText());
         ticket.setSourceLang(request.getSourceLang());
         ticket.setTargetLang(request.getTargetLang());
@@ -60,5 +61,21 @@ public class TicketController {
         }
 
         return ResponseEntity.ok(ticketRepository.findByStatus(parsed));
+    }
+
+    // -------- Day 2 endpoints --------
+
+    @PostMapping("/{id}/translate")
+    public ResponseEntity<Ticket> translate(@PathVariable Long id) {
+        Ticket updated = ticketService.translate(id);
+        return ResponseEntity.ok(updated);
+    }
+
+    @GetMapping("/{id}/translation")
+    public ResponseEntity<TranslationStatusResponse> getTranslation(@PathVariable Long id) {
+        Ticket ticket = ticketService.getOrThrow(id);
+        TranslationStatusResponse response =
+                new TranslationStatusResponse(ticket.getId(), ticket.getStatus(), ticket.getTranslatedText());
+        return ResponseEntity.ok(response);
     }
 }
