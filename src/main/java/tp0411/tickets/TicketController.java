@@ -63,8 +63,6 @@ public class TicketController {
         return ResponseEntity.ok(ticketRepository.findByStatus(parsed));
     }
 
-    // -------- Day 2 endpoints --------
-
     @PostMapping("/{id}/translate")
     public ResponseEntity<Ticket> translate(@PathVariable Long id) {
         Ticket updated = ticketService.translate(id);
@@ -76,6 +74,13 @@ public class TicketController {
         Ticket ticket = ticketService.getOrThrow(id);
         TranslationStatusResponse response =
                 new TranslationStatusResponse(ticket.getId(), ticket.getStatus(), ticket.getTranslatedText());
+        return ResponseEntity.ok(response);
+    }
+
+    // Day 3: delivery simulation
+    @PostMapping("/{id}/deliver")
+    public ResponseEntity<DeliverResponse> deliver(@PathVariable Long id) {
+        DeliverResponse response = ticketService.deliver(id);
         return ResponseEntity.ok(response);
     }
 }
