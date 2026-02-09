@@ -14,6 +14,18 @@ export type TranslationRecord = {
     translatedAt: string | null;
 };
 
+export type DeliveryResponse = {
+    delivered: boolean;
+    ticketId: number;
+    deliveredAt: string;
+    payload: {
+        originalText: string;
+        translatedText: string;
+        sourceLang: string;
+        targetLang: string;
+    };
+};
+
 type BackendError = { error?: string; message?: string };
 
 async function readNiceError(res: Response): Promise<string> {
@@ -52,8 +64,18 @@ export async function translateRecord(id: number): Promise<TranslationRecord> {
     return res.json();
 }
 
-export async function listRecords(): Promise<TranslationRecord[]> {
-    const res = await fetch(`${API_URL}/tickets`, { cache: "no-store" });
+export async function deliverRecord(id: number): Promise<DeliveryResponse> {
+    const res = await fetch(`${API_URL}/tickets/${id}/deliver`, {
+        method: "POST",
+    });
+
+    if (!res.ok) throw new Error(await readNiceError(res));
+    return res.json();
+}
+
+export async function listRecords(status?: Status): Promise<TranslationRecord[]> {
+    const url = status ? `${API_URL}/tickets?status=${encodeURIComponent(status)}` : `${API_URL}/tickets`;
+    const res = await fetch(url, { cache: "no-store" });
 
     if (!res.ok) throw new Error(await readNiceError(res));
     return res.json();

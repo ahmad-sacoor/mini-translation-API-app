@@ -17,3 +17,9 @@ spring:
 logging:
   level:
     org.hibernate.SQL: debug
+
+deepl:
+  baseUrl: ${DEEPL_BASE_URL:https://api-free.deepl.com/v2}
+  apiKey: ${DEEPL_API_KEY:da13e0ec-fce0-46c3-9b8d-863f66d30686:fx}
+  timeoutMs: ${DEEPL_TIMEOUT_MS:8000}
+

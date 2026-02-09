@@ -2,8 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+    DeliveryResponse,
+    Status,
     TranslationRecord,
     createRecord,
+    deliverRecord,
     listRecords,
     translateRecord,
 } from "@/lib/api";
@@ -15,36 +18,40 @@ function formatFlow(r: TranslationRecord) {
 }
 
 function prettyTime(iso: string) {
-    // super light formatting, no date libs
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return iso;
     return d.toLocaleString();
 }
 
-export default function Home() {
+export default function Page() {
     const [sourceLang, setSourceLang] = useState<(typeof LANGS)[number]>("en");
     const [targetLang, setTargetLang] = useState<(typeof LANGS)[number]>("pt");
     const [text, setText] = useState("");
 
     const [result, setResult] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
 
     const [history, setHistory] = useState<TranslationRecord[]>([]);
     const [selectedId, setSelectedId] = useState<number | null>(null);
+    const [historyFilter, setHistoryFilter] = useState<"ALL" | Status>("ALL");
 
     const [loading, setLoading] = useState(false);
     const [historyLoading, setHistoryLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+
+    const [delivering, setDelivering] = useState(false);
+    const [delivery, setDelivery] = useState<DeliveryResponse | null>(null);
 
     const selected = useMemo(
         () => history.find((h) => h.id === selectedId) || null,
         [history, selectedId]
     );
 
-    async function refreshHistory() {
+    async function refreshHistory(filter = historyFilter) {
         setHistoryLoading(true);
         setError(null);
         try {
-            const items = await listRecords();
+            const items =
+                filter === "ALL" ? await listRecords() : await listRecords(filter);
             items.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
             setHistory(items);
         } catch (e: any) {
@@ -56,11 +63,13 @@ export default function Home() {
 
     useEffect(() => {
         refreshHistory();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     async function onTranslate() {
         setError(null);
         setResult(null);
+        setDelivery(null);
 
         if (!text.trim()) {
             setError("Type something first.");
@@ -78,7 +87,6 @@ export default function Home() {
             const translated = await translateRecord(created.id);
 
             setResult(translated.translatedText);
-
             await refreshHistory();
             setSelectedId(translated.id);
         } catch (e: any) {
@@ -88,42 +96,55 @@ export default function Home() {
         }
     }
 
+    async function onDeliver() {
+        if (!selected) return;
+        setError(null);
+        setDelivering(true);
+        setDelivery(null);
+
+        try {
+            const res = await deliverRecord(selected.id);
+            setDelivery(res);
+        } catch (e: any) {
+            setError(e?.message || "Delivery failed.");
+        } finally {
+            setDelivering(false);
+        }
+    }
+
     function clearAll() {
         setText("");
         setResult(null);
         setError(null);
+        setDelivery(null);
+    }
+
+    function onChangeFilter(v: "ALL" | Status) {
+        setHistoryFilter(v);
+        setSelectedId(null);
+        setDelivery(null);
+        refreshHistory(v);
     }
 
     return (
         <main className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-emerald-50 text-zinc-900">
             <div className="mx-auto max-w-5xl px-6 py-10">
-                {/* Header */}
                 <header className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                         <h1 className="text-3xl font-semibold tracking-tight">
                             Translate text
                         </h1>
                         <p className="mt-1 text-sm text-zinc-600">
-                            A tiny translation UI connected to your API.
+                            Translate, browse history, and deliver results to a partner.
                         </p>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-            <span className="rounded-full bg-white/70 px-3 py-1 text-xs text-zinc-600 shadow-sm ring-1 ring-zinc-200">
-              API: {process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}
-            </span>
                     </div>
                 </header>
 
-                {/* Top grid: form + result */}
                 <section className="grid gap-6 lg:grid-cols-2">
-                    {/* Translate card */}
                     <div className="rounded-2xl bg-white/80 p-6 shadow-sm ring-1 ring-zinc-200 backdrop-blur">
                         <div className="flex items-center justify-between">
                             <h2 className="text-lg font-semibold">Translate</h2>
-                            <span className="text-xs text-zinc-500">
-                Choose languages and translate
-              </span>
+                            <span className="text-xs text-zinc-500">Simple workflow</span>
                         </div>
 
                         <div className="mt-5 grid gap-4 sm:grid-cols-2">
@@ -190,7 +211,7 @@ export default function Home() {
                             </button>
 
                             <button
-                                onClick={refreshHistory}
+                                onClick={() => refreshHistory()}
                                 disabled={historyLoading}
                                 className="inline-flex h-11 items-center justify-center rounded-xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-800 shadow-sm transition hover:bg-zinc-50 disabled:opacity-60"
                             >
@@ -205,13 +226,10 @@ export default function Home() {
                         )}
                     </div>
 
-                    {/* Result card */}
                     <div className="rounded-2xl bg-white/80 p-6 shadow-sm ring-1 ring-zinc-200 backdrop-blur">
                         <div className="flex items-center justify-between">
                             <h2 className="text-lg font-semibold">Result</h2>
-                            <span className="text-xs text-zinc-500">
-                Output appears after translation
-              </span>
+                            <span className="text-xs text-zinc-500">After translation</span>
                         </div>
 
                         <div className="mt-5 rounded-2xl bg-gradient-to-br from-zinc-50 to-white p-5 ring-1 ring-zinc-200">
@@ -226,39 +244,57 @@ export default function Home() {
                             )}
                         </div>
 
-                        {selected && (
-                            <div className="mt-5 grid gap-3 rounded-2xl bg-white p-5 ring-1 ring-zinc-200">
-                                <div className="flex items-center justify-between">
-                                    <div className="font-semibold">{formatFlow(selected)}</div>
-                                    <span
-                                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                                            selected.status === "TRANSLATED"
-                                                ? "bg-emerald-100 text-emerald-800"
-                                                : selected.status === "FAILED"
-                                                    ? "bg-red-100 text-red-800"
-                                                    : "bg-indigo-100 text-indigo-800"
-                                        }`}
-                                    >
-                    {selected.status}
-                  </span>
-                                </div>
-                                <div className="text-xs text-zinc-500">
-                                    Created: {prettyTime(selected.createdAt)}
-                                </div>
+                        <div className="mt-5 rounded-2xl bg-white p-5 ring-1 ring-zinc-200">
+                            <div className="flex items-center justify-between">
+                                <div className="font-semibold">Deliver to partner</div>
+                                <span className="text-xs text-zinc-500">
+                  Available when done
+                </span>
                             </div>
-                        )}
+
+                            <p className="mt-2 text-sm text-zinc-600">
+                                This simulates sending the translation to another system.
+                            </p>
+
+                            <button
+                                onClick={onDeliver}
+                                disabled={!selected || selected.status !== "TRANSLATED" || delivering}
+                                className="mt-4 inline-flex h-11 items-center justify-center rounded-xl bg-emerald-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-60"
+                            >
+                                {delivering ? "Delivering…" : "Deliver"}
+                            </button>
+
+                            {delivery && (
+                                <div className="mt-4">
+                                    <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                                        Delivered payload
+                                    </div>
+                                    <pre className="mt-2 max-h-[220px] overflow-auto rounded-xl bg-zinc-900 p-4 text-xs text-zinc-100">
+{JSON.stringify(delivery, null, 2)}
+                  </pre>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </section>
 
-                {/* Bottom grid: history + details */}
                 <section className="mt-8 grid gap-6 lg:grid-cols-2">
-                    {/* History */}
                     <div className="rounded-2xl bg-white/80 p-6 shadow-sm ring-1 ring-zinc-200 backdrop-blur">
-                        <div className="flex items-center justify-between">
-                            <h2 className="text-lg font-semibold">History</h2>
-                            <span className="text-xs text-zinc-500">
-                {history.length} item{history.length === 1 ? "" : "s"}
-              </span>
+                        <div className="flex items-center justify-between gap-3">
+                            <h2 className="text-lg font-semibold">Translation history</h2>
+
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs text-zinc-600">Filter</span>
+                                <select
+                                    className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 shadow-sm outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100"
+                                    value={historyFilter}
+                                    onChange={(e) => onChangeFilter(e.target.value as any)}
+                                >
+                                    <option value="ALL">All</option>
+                                    <option value="CREATED">Created</option>
+                                    <option value="TRANSLATED">Translated</option>
+                                </select>
+                            </div>
                         </div>
 
                         {history.length === 0 && !historyLoading && (
@@ -271,7 +307,10 @@ export default function Home() {
                                 return (
                                     <li key={h.id}>
                                         <button
-                                            onClick={() => setSelectedId(h.id)}
+                                            onClick={() => {
+                                                setSelectedId(h.id);
+                                                setDelivery(null);
+                                            }}
                                             className={[
                                                 "w-full rounded-2xl border px-4 py-3 text-left shadow-sm transition",
                                                 active
@@ -306,7 +345,6 @@ export default function Home() {
                         </ul>
                     </div>
 
-                    {/* Details */}
                     <div className="rounded-2xl bg-white/80 p-6 shadow-sm ring-1 ring-zinc-200 backdrop-blur">
                         <div className="flex items-center justify-between">
                             <h2 className="text-lg font-semibold">Details</h2>
@@ -321,7 +359,7 @@ export default function Home() {
                             <div className="mt-5 space-y-4">
                                 <div className="flex items-center justify-between">
                                     <div className="font-semibold">{formatFlow(selected)}</div>
-                                    <span className="text-xs text-zinc-500">id: {selected.id}</span>
+                                    <span className="text-xs text-zinc-500">ref: {selected.id}</span>
                                 </div>
 
                                 <div className="rounded-2xl bg-white p-5 ring-1 ring-zinc-200">
@@ -352,8 +390,7 @@ export default function Home() {
                 </section>
 
                 <footer className="mt-10 text-center text-xs text-zinc-500">
-                    Tip: your backend still uses <span className="font-mono">/tickets</span>,
-                    but the UI keeps it hidden.
+                    Backend stays the same, UI keeps the wording friendly.
                 </footer>
             </div>
         </main>
